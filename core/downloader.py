@@ -96,7 +96,7 @@ class Downloader:
         output_template = self.songs_dir / f"{song_uuid}"
         
         ydl_opts = {
-            'format': 'bestaudio/best',
+            # 'format': 'bestaudio/best', # 移除格式限制，避免某些视频无法获取音频流
             'outtmpl': str(output_template),
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',

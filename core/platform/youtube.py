@@ -49,6 +49,8 @@ class YoutubeMusic(BaseMusicPlayer):
         cookies_path = self.cfg.data_dir / "cookies.txt"
         if cookies_path.exists():
              ydl_opts['cookiefile'] = str(cookies_path)
+        
+        ydl_opts['js_runtimes'] = {'node': {}}
 
         try:
             # 在线程中运行搜索，避免阻塞

@@ -81,7 +81,7 @@ class Downloader:
         output_template = self.songs_dir / f"{song_uuid}"
         
         ydl_opts = {
-            # 'format': 'bestaudio/best', # 移除格式限制，避免某些视频无法获取音频流
+            'format': 'bestaudio/best',
             'outtmpl': str(output_template),
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
@@ -90,6 +90,8 @@ class Downloader:
             }],
             'quiet': True,
             'no_warnings': True,
+            # 显式指定 JS 运行时(node)，解决 n-challenge 失败问题
+            'js_runtimes': {'node': {}},
         }
         
         cookies_path = self.cfg.data_dir / "cookies.txt"

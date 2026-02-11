@@ -23,7 +23,6 @@ class Downloader:
     async def initialize(self):
         if self.cfg.clear_cache:
             self._ensure_cache_dir()
-        self._ensure_cookies_file()
 
     async def close(self):
         await self.session.close()
@@ -34,20 +33,6 @@ class Downloader:
             shutil.rmtree(self.songs_dir)
         self.songs_dir.mkdir(parents=True, exist_ok=True)
         logger.debug(f"缓存目录已重建：{self.songs_dir}")
-
-    def _ensure_cookies_file(self) -> None:
-        """如果配置了 yt_cookies_content，则写入 cookies.txt"""
-        cookies_content = self.cfg.yt_cookies_content
-        if not cookies_content:
-            return
-            
-        cookies_path = self.cfg.data_dir / "cookies.txt"
-        try:
-            with open(cookies_path, "w", encoding="utf-8") as f:
-                f.write(cookies_content)
-            logger.debug(f"已写入 Youtube cookies 到 {cookies_path}")
-        except Exception as e:
-            logger.error(f"写入 cookies 文件失败: {e}")
 
     async def download_image(self, url: str, close_ssl: bool = True) -> bytes | None:
         """下载图片"""

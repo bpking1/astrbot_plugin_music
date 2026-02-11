@@ -84,13 +84,6 @@
         "type": "string",
         "default": ""
     },
-    "yt_cookies_content": {
-        "description": "Youtube Cookies 内容",
-        "hint": "直接粘贴 cookies.txt 的内容。使用浏览器扩展 (如 Get cookies.txt LOCALLY) 导出为 Netscape 格式文本并粘贴在此处。留空则不使用 cookies",
-        "type": "string",
-        "default": "",
-        "long_text": true
-    },
     "timeout": {
         "description": "点歌操作的超时时长（秒）",
         "hint": "点歌时用户在此时间内没有进行操作则自动取消点歌",

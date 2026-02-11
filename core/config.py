@@ -113,6 +113,7 @@ class PluginConfig(ConfigNode):
     enable_comments: bool
     enable_lyrics: bool
     proxy: str
+    yt_cookies_content: str
     timeout: int
     timeout_recall: bool
     clear_cache: bool

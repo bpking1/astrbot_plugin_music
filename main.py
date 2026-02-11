@@ -289,3 +289,76 @@ class MusicPlugin(Star):
 
         # 发送歌曲
         await self.sender.send_song(event, player, song)
+
+    @filter.command("上传cookies")
+    async def upload_cookies(self, event: AstrMessageEvent):
+        '''上传cookies <直接发送cookies文件>'''
+        yield event.plain_result(
+            "请直接发送 cookies.txt 文件。\n"
+            "你可以使用浏览器扩展 (如 Get cookies.txt LOCALLY) 导出为 Netscape 格式文本。\n"
+            "发送 '取消' 可取消操作。"
+        )
+
+        @session_waiter(timeout=60)
+        async def cookies_waiter(
+            controller: SessionController, event: AstrMessageEvent
+        ):
+            if event.message_str.strip() == "取消":
+                await event.send(event.plain_result("已取消操作"))
+                controller.stop()
+                return
+
+            file_url = None
+            
+            # 1. 尝试从 message_obj 获取 url (Lagrange/Napcat)
+            msg_obj = event.message_obj
+            if hasattr(msg_obj, "message"): 
+                for segment in msg_obj.message: 
+                    if segment.type == "file":
+                        file_url = segment.data.get("url")
+                        break
+
+            # 2. 如果是纯文本内容（直接粘贴）
+            if not file_url and len(event.message_str) > 50 and ".youtube.com" in event.message_str:
+                 try:
+                    cookies_path = self.cfg.data_dir / "cookies.txt"
+                    with open(cookies_path, "w", encoding="utf-8") as f:
+                        f.write(event.message_str)
+                    await event.send(event.plain_result("Cookies 内容已保存！"))
+                    controller.stop()
+                    return
+                 except Exception as e:
+                    await event.send(event.plain_result(f"保存失败: {e}"))
+                    controller.stop()
+                    return
+
+            # 3. 如果是文件 URL，下载并保存
+            import aiohttp
+            if file_url:
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(file_url) as resp:
+                            if resp.status == 200:
+                                content = await resp.text()
+                                cookies_path = self.cfg.data_dir / "cookies.txt"
+                                with open(cookies_path, "w", encoding="utf-8") as f:
+                                    f.write(content)
+                                await event.send(event.plain_result("Cookies 文件已接收并保存！"))
+                            else:
+                                await event.send(event.plain_result("下载文件失败"))
+                    controller.stop()
+                    return
+                except Exception as e:
+                    await event.send(event.plain_result(f"处理文件失败: {e}"))
+                    controller.stop()
+                    return
+            
+            # 4. 如果是文件但没有 URL (官方 Bot 或某些适配器)
+            # 这里简单提示
+            await event.send(event.plain_result("未检测到有效的文件链接或内容。如果是文件发送，请确保使用的是支持文件URL的适配器(如Lagrange/Napcat)。\n或者直接粘贴文件内容。"))
+
+        try:
+            await cookies_waiter(event) # type: ignore
+        except TimeoutError:
+            yield event.plain_result("操作超时")
+

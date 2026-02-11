@@ -2,6 +2,7 @@
 import asyncio
 import random
 
+import re
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 from astrbot.core.message.components import File, Image, Record
@@ -158,9 +159,33 @@ class MusicSender:
         if not file_path:
             await event.send(event.plain_result(f"【{song.name}】音频文件下载失败"))
             return False
+            
         try:
-            file_name = f"{song.name}_{song.artists}{file_path.suffix}"
-            seg = File(name=file_name, file=str(file_path))
+            # 清洗文件名
+            raw_filename = f"{song.name} - {song.artists}{file_path.suffix}"
+            safe_filename = re.sub(r'[\\/:*?"<>|]', '_', raw_filename)
+            
+            # 针对 OneBot (NapCat) 协议，手动构造消息以绕过 Core 的潜在处理
+            if isinstance(event, AiocqhttpMessageEvent):
+                file_uri = f"file://{file_path.absolute()}"
+                payloads = {
+                    "message": [
+                        {
+                            "type": "file",
+                            "data": {
+                                "file": file_uri,
+                                "name": safe_filename
+                            }
+                        }
+                    ]
+                }
+                logger.debug(f"手动构造发送文件 payloads: {payloads}")
+                await self.send_msg(event, payloads)
+                return True
+            
+            # 其他平台回退到使用组件
+            from astrbot.core.message.components import File
+            seg = File(name=safe_filename, file=str(file_path))
             await event.send(event.chain_result([seg]))
             return True
         except Exception as e:

@@ -136,11 +136,38 @@ class MusicSender:
         if not song.audio_url:
             await event.send(event.plain_result(f"【{song.name}】音频获取失败"))
             return False
+            
         try:
-            logger.debug(f"正在发送【{song.name}】音频: {song.audio_url}")
-            seg = Record.fromURL(song.audio_url)
-            await event.send(event.chain_result([seg]))
-            return True
+            if "youtube.com" in song.audio_url or "youtu.be" in song.audio_url:
+                logger.debug(f"正在下载并发送【{song.name}】Youtube 语音: {song.audio_url}")
+                file_path = await self.downloader.download_song(song.audio_url)
+                if not file_path:
+                    await event.send(event.plain_result(f"【{song.name}】Youtube 音频下载失败"))
+                    return False
+                
+                if isinstance(event, AiocqhttpMessageEvent):
+                    file_uri = f"file://{file_path.absolute()}"
+                    payloads = {
+                        "message": [
+                            {
+                                "type": "record",
+                                "data": {
+                                    "file": file_uri
+                                }
+                            }
+                        ]
+                    }
+                    await self.send_msg(event, payloads)
+                    return True
+                
+                seg = Record(file=str(file_path.absolute()))
+                await event.send(event.chain_result([seg]))
+                return True
+            else:
+                logger.debug(f"正在发送【{song.name}】音频: {song.audio_url}")
+                seg = Record.fromURL(song.audio_url)
+                await event.send(event.chain_result([seg]))
+                return True
         except Exception as e:
             logger.error(f"【{song.name}】音频发送失败: {e}")
             return False

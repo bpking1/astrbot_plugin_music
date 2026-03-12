@@ -31,6 +31,9 @@ class YoutubeMusic(BaseMusicPlayer):
         try:
             import yt_dlp
             logger.info(f"当前 Python 环境加载的 yt-dlp 版本: {yt_dlp.version.__version__}")
+            logger.info(f"环境 HTTP_PROXY: {os.environ.get('HTTP_PROXY')} | http_proxy: {os.environ.get('http_proxy')}")
+            logger.info(f"环境 HTTPS_PROXY: {os.environ.get('HTTPS_PROXY')} | https_proxy: {os.environ.get('https_proxy')}")
+            logger.info(f"搜索关键字: {repr(keyword)}")
         except ImportError:
             logger.error("请先安装 yt-dlp: pip install yt-dlp")
             return []
@@ -41,8 +44,9 @@ class YoutubeMusic(BaseMusicPlayer):
         ydl_opts = {
             'quiet': False,
             'ignoreerrors': False,
-            'no_warnings': True,
+            'no_warnings': False,
             'extract_flat': True, # 快速提取，不获取流地址
+            'verbose': True,
             'socket_timeout': 10,
         }
         

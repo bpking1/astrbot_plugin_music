@@ -22,54 +22,50 @@ class YoutubeMusic(BaseMusicPlayer):
 
     async def fetch_songs(
         self, keyword: str, limit: int, extra: str | None = None
-    ) -> list[Song]:
-        """
-        搜索歌曲
-        :param keyword: 搜索关键字
-        :param limit: 搜索数量
-        """
-        try:
-            import yt_dlp
-        except ImportError:
-            logger.error("请先安装 yt-dlp: pip install yt-dlp")
-            return []
-
+    ) -> list:
+        import json
+        import asyncio
+        import sys
         search_query = f"ytsearch{limit}:{keyword}"
-
-        # 配置 yt-dlp 选项
-        ydl_opts = {
-            'quiet': False,
-            'ignoreerrors': False,
-            'no_warnings': True,
-            'extract_flat': True, # 快速提取，不获取流地址
-            'socket_timeout': 10,
-        }
-        
+        # 核心魔法：拼装独立的进程启动命令
+        # 使用 sys.executable 确保依然使用当前的 python 环境
+        cmd = [
+            sys.executable, "-m", "yt_dlp",
+            "-J",               # 👇 极度关键：--dump-single-json 缩写，yt-dlp会将获取的数据作为单纯的 JSON 字典打印到 stdout 控制台
+            "--flat-playlist",  # 快速提取，不获取流地址
+            "--ignore-errors",
+            "--no-warnings",
+            "--socket-timeout", "10",
+        ]
         cookies_path = self.cfg.data_dir / "cookies.txt"
         if cookies_path.exists():
-             ydl_opts['cookiefile'] = str(cookies_path)
-        
-        ydl_opts['js_runtimes'] = {'node': {}}
-
-        def sync_fetch():
-            import asyncio
-            # 🔑 核心魔法补丁：检查当前子线程是否有事件循环，如果没有，则为 yt-dlp 的防风控库创建一个！
-            try:
-                asyncio.get_event_loop()
-            except RuntimeError:
-                asyncio.set_event_loop(asyncio.new_event_loop())
-                
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                return ydl.extract_info(search_query, download=False)
-
+            cmd.extend(["--cookies", str(cookies_path)])
+            
+        cmd.append(search_query)
         try:
-            # 在线程中运行搜索，避免阻塞
-            loop = asyncio.get_running_loop()
-            info = await loop.run_in_executor(None, sync_fetch)
-            # info = await loop.run_in_executor(
-            #     None, 
-            #     lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(search_query, download=False)
-            # )
+            logger.info(f"开启无污染独立子进程搜索: {' '.join(cmd)}")
+            
+            # 使用 asyncio 异步创建纯净的子进程
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                limit=1024 * 1024 * 5 # 赋予子进程 5MB 缓冲区，足量接收 JSON
+            )
+            
+            # 异步非阻塞等待进程执行完成，拿到标准输出
+            stdout, stderr = await process.communicate()
+            if not stdout:
+                logger.error(f"Youtube 子进程搜索抛异常:\n{stderr.decode('utf-8', errors='ignore')}")
+                return []
+            # 因为开启了 -J，yt-dlp所有的过程日志会走 stderr，而纯净的 JSON 结果全在 stdout 里
+            try:
+                # 解析获取到的纯净 JSON，它的结构和之前直接调用代码拿到的字典是一模一样的！
+                raw_json_str = stdout.decode('utf-8', errors='ignore')
+                info = json.loads(raw_json_str)
+            except json.JSONDecodeError as e:
+                logger.error(f"读取子进程 JSON 失败: {e}\n原文前 200 字: {raw_json_str[:200]}")
+                return []
 
             if not info:
                 return []

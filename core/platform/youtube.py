@@ -30,6 +30,7 @@ class YoutubeMusic(BaseMusicPlayer):
         """
         try:
             import yt_dlp
+            logger.info(f"当前 Python 环境加载的 yt-dlp 版本: {yt_dlp.version.__version__}")
         except ImportError:
             logger.error("请先安装 yt-dlp: pip install yt-dlp")
             return []

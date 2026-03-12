@@ -79,12 +79,12 @@ class Downloader:
         
         # 将复杂的配置参数包装成字典
         ydl_opts = {
-            'format': 'bestaudio/best',
+            'format': 'ba[abr<=128]/wa/ba/best',
             'outtmpl': str(output_template) + ".%(ext)s",
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
-                'preferredquality': '192',
+                'preferredquality': '128',
             }],
             'quiet': True,
             'no_warnings': True,

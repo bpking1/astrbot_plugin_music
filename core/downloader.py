@@ -69,49 +69,57 @@ class Downloader:
             return None
 
     async def download_youtube(self, url: str) -> Path | None:
-        """从 Youtube 下载音频并转换为 mp3"""
-        try:
-            import yt_dlp
-        except ImportError:
-            logger.error("请先安装 yt-dlp: pip install yt-dlp")
-            return None
-
+        """从 Youtube 下载音频并转换为 mp3 (独立子进程防污染版)"""
+        import asyncio
+        import sys
+        
         song_uuid = uuid.uuid4().hex
-        # yt-dlp 会自动添加扩展名，所以这里只需要模板
         output_template = self.songs_dir / f"{song_uuid}"
         
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': str(output_template),
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'quiet': True,
-            'no_warnings': True,
-            # 显式指定 JS 运行时(node)，解决 n-challenge 失败问题
-            'js_runtimes': {'node': {}},
-        }
+        # 构建干净的命令行下载指令
+        cmd = [
+            sys.executable, "-m", "yt_dlp",
+            "--format", "bestaudio/best",
+            "--output", str(output_template) + ".%(ext)s",
+            "--extract-audio",
+            "--audio-format", "mp3",
+            "--audio-quality", "192",
+            "--no-warnings"
+        ]
         
+        # 你的原本逻辑：JS 运行时和 Cookie (可选添加)
         cookies_path = self.cfg.data_dir / "cookies.txt"
         if cookies_path.exists():
-             ydl_opts['cookiefile'] = str(cookies_path)
-
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # 在线程池中运行，避免阻塞主循环
-                await asyncio.to_thread(ydl.download, [url])
+            cmd.extend(["--cookies", str(cookies_path)])
             
-            # 最终文件路径
+        cmd.append(url)
+        
+        try:
+            logger.info(f"拉起独立子进程下载: {' '.join(cmd)}")
+            
+            # 异步执行终端命令，不会阻塞机器人回复！
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            # 等待下载完全结束
+            stdout, stderr = await process.communicate()
+            
+            # 因为 yt-dlp 自行处理了后缀名，我们只需要检查目标路径有没有 .mp3 即可
             final_path = self.songs_dir / f"{song_uuid}.mp3"
-            if final_path.exists():
-                logger.debug(f"Youtube 下载完成，保存在：{final_path}")
+            
+            if process.returncode == 0 and final_path.exists():
+                logger.debug(f"Youtube 独立进程下载完成，保存在：{final_path}")
                 return final_path
             else:
-                logger.error("Youtube 下载失败，文件未生成")
+                stderr_str = stderr.decode('utf-8', errors='ignore') if stderr else '未知错误'
+                logger.error(f"Youtube 下载进程报错，退出码 {process.returncode}:\n{stderr_str}")
                 return None
                 
         except Exception as e:
-            logger.error(f"Youtube 下载失败: {e}")
+            logger.error(f"Youtube 下载拉起进程失败: {e}")
             return None
+
+

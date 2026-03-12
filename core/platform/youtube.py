@@ -1,4 +1,3 @@
-
 import asyncio
 from typing import ClassVar
 
@@ -39,8 +38,8 @@ class YoutubeMusic(BaseMusicPlayer):
 
         # 配置 yt-dlp 选项
         ydl_opts = {
-            'quiet': True,
-            'ignoreerrors': True,
+            'quiet': False,
+            'ignoreerrors': False,
             'no_warnings': True,
             'extract_flat': True, # 快速提取，不获取流地址
             'socket_timeout': 10,

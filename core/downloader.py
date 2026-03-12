@@ -67,59 +67,74 @@ class Downloader:
         except Exception as e:
             logger.error(f"歌曲下载失败，错误信息：{e}")
             return None
-
-    async def download_youtube(self, url: str) -> Path | None:
-        """从 Youtube 下载音频并转换为 mp3 (独立子进程防污染版)"""
-        import asyncio
-        import sys
-        
-        song_uuid = uuid.uuid4().hex
-        output_template = self.songs_dir / f"{song_uuid}"
-        
-        # 构建干净的命令行下载指令
-        cmd = [
-            sys.executable, "-m", "yt_dlp",
-            "--format", "bestaudio/best",
-            "--output", str(output_template) + ".%(ext)s",
-            "--extract-audio",
-            "--audio-format", "mp3",
-            "--audio-quality", "192",
-            "--no-warnings"
-        ]
-        
-        # 你的原本逻辑：JS 运行时和 Cookie (可选添加)
-        cookies_path = self.cfg.data_dir / "cookies.txt"
-        if cookies_path.exists():
-            cmd.extend(["--cookies", str(cookies_path)])
+        async def download_youtube(self, url: str) -> Path | None:
+            """从 Youtube 下载音频并转换为 mp3 (带 js_runtime 的独立子进程版)"""
+            import asyncio
+            import sys
+            import json
             
-        cmd.append(url)
-        
-        try:
-            logger.info(f"拉起独立子进程下载: {' '.join(cmd)}")
-            
-            # 异步执行终端命令，不会阻塞机器人回复！
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            # 等待下载完全结束
-            stdout, stderr = await process.communicate()
-            
-            # 因为 yt-dlp 自行处理了后缀名，我们只需要检查目标路径有没有 .mp3 即可
+            song_uuid = uuid.uuid4().hex
+            output_template = self.songs_dir / f"{song_uuid}"
             final_path = self.songs_dir / f"{song_uuid}.mp3"
             
-            if process.returncode == 0 and final_path.exists():
-                logger.debug(f"Youtube 独立进程下载完成，保存在：{final_path}")
-                return final_path
-            else:
-                stderr_str = stderr.decode('utf-8', errors='ignore') if stderr else '未知错误'
-                logger.error(f"Youtube 下载进程报错，退出码 {process.returncode}:\n{stderr_str}")
-                return None
+            # 将复杂的配置参数包装成字典
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': str(output_template) + ".%(ext)s",
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'quiet': True,
+                'no_warnings': True,
+                # 找回你最关键的 js 运行时指令！
+                'js_runtimes': {'node': {}},
+            }
+            
+            cookies_path = self.cfg.data_dir / "cookies.txt"
+            if cookies_path.exists():
+                ydl_opts['cookiefile'] = str(cookies_path)
                 
-        except Exception as e:
-            logger.error(f"Youtube 下载拉起进程失败: {e}")
-            return None
+            # 核心：我们将这一段代码作为一个微型的独立 Python 脚本来运行
+            # 这样它在一个全新的进程里，既不会被 AstrBot 污染，又继承了这套复杂的配置
+            script_code = f"""
+    import sys
+    import yt_dlp
+    import json
 
+    ydl_opts = json.loads('''{json.dumps(ydl_opts)}''')
+    url = '{url}'
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        sys.exit(0)
+    except Exception as e:
+        print(f"ERROR: {{e}}", file=sys.stderr)
+        sys.exit(1)
+    """
+
+            try:
+                logger.info("启动防污染 Python 子进程执行精确配置的 yt-dlp...")
+                # 异步执行包裹好的 Python 代码
+                process = await asyncio.create_subprocess_exec(
+                    sys.executable, "-c", script_code,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                
+                stdout, stderr = await process.communicate()
+                
+                if process.returncode == 0 and final_path.exists():
+                    logger.debug(f"Youtube 下载完成，保存在：{final_path}")
+                    return final_path
+                else:
+                    stderr_str = stderr.decode('utf-8', errors='ignore') if stderr else '未知错误'
+                    logger.error(f"Youtube 子进程下载失败，退出码 {process.returncode}:\n{stderr_str}")
+                    return None
+                    
+            except Exception as e:
+                logger.error(f"Youtube 下载进程拉起失败: {e}")
+                return None
 

@@ -1,5 +1,4 @@
 import asyncio
-import os
 from typing import ClassVar
 
 from astrbot.api import logger
@@ -31,10 +30,6 @@ class YoutubeMusic(BaseMusicPlayer):
         """
         try:
             import yt_dlp
-            logger.info(f"当前 Python 环境加载的 yt-dlp 版本: {yt_dlp.version.__version__}")
-            logger.info(f"环境 HTTP_PROXY: {os.environ.get('HTTP_PROXY')} | http_proxy: {os.environ.get('http_proxy')}")
-            logger.info(f"环境 HTTPS_PROXY: {os.environ.get('HTTPS_PROXY')} | https_proxy: {os.environ.get('https_proxy')}")
-            logger.info(f"搜索关键字: {repr(keyword)}")
         except ImportError:
             logger.error("请先安装 yt-dlp: pip install yt-dlp")
             return []
@@ -45,9 +40,8 @@ class YoutubeMusic(BaseMusicPlayer):
         ydl_opts = {
             'quiet': False,
             'ignoreerrors': False,
-            'no_warnings': False,
+            'no_warnings': True,
             'extract_flat': True, # 快速提取，不获取流地址
-            'verbose': True,
             'socket_timeout': 10,
         }
         
@@ -55,15 +49,27 @@ class YoutubeMusic(BaseMusicPlayer):
         if cookies_path.exists():
              ydl_opts['cookiefile'] = str(cookies_path)
         
-        # ydl_opts['js_runtimes'] = {'node': {}}
+        ydl_opts['js_runtimes'] = {'node': {}}
+
+        def sync_fetch():
+            import asyncio
+            # 🔑 核心魔法补丁：检查当前子线程是否有事件循环，如果没有，则为 yt-dlp 的防风控库创建一个！
+            try:
+                asyncio.get_event_loop()
+            except RuntimeError:
+                asyncio.set_event_loop(asyncio.new_event_loop())
+                
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(search_query, download=False)
 
         try:
             # 在线程中运行搜索，避免阻塞
             loop = asyncio.get_running_loop()
-            info = await loop.run_in_executor(
-                None, 
-                lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(search_query, download=False)
-            )
+            info = await loop.run_in_executor(None, sync_fetch)
+            # info = await loop.run_in_executor(
+            #     None, 
+            #     lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(search_query, download=False)
+            # )
 
             if not info:
                 return []
